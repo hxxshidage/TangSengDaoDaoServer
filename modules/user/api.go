@@ -488,6 +488,10 @@ func (u *User) userIM(c *wkhttp.Context) {
 		c.ResponseError(err)
 		return
 	}
+
+	resultMap["tcp_addr"] = "192.168.1.155:5100"
+	resultMap["ws_addr"] = "ws://192.168.1.155:5200"
+	resultMap["wss_addr"] = ""
 	c.JSON(resp.StatusCode, resultMap)
 }
 
