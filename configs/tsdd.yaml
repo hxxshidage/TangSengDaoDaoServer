@@ -19,9 +19,15 @@ wukongIM:
 
 ##################### db ####################
 db:
-  mysqlAddr: "root:root@tcp(192.168.10.100:3306)/im_test?charset=utf8mb4&parseTime=true" # mysql连接地址
-  redisAddr: "192.168.10.100:6379" # redis地址
-  redisPass: "r123" # redis密码
+  mysqlAddr: "root:root@tcp(192.168.1.45:3306)/fsx_im?charset=utf8mb4&parseTime=true" # mysql连接地址
+  migration: true
+  outputLog: true
+  mySQLMaxOpenConns: 128
+  mySQLMaxIdleConns: 10
+  redisAddr: "192.168.1.45:6379" # redis地址
+  redisPass: "fsx_redis123" # redis密码
+  redisMaxIdle: 2
+  redisMaxOpen: 8
   asynctaskRedisAddr: "" # 异步任务的redis地址 不写默认为RedisAddr的地址
 
 ##################### 外网配置 ####################
@@ -31,10 +37,11 @@ db:
 #  webLoginURL: "" # web im的登录地址 例如 https://web.tangsengdaodao.com
 
 ##################### 日志配置 ####################
-#logger:
-#  level: 0 # 日志级别 0:未配置,将根据mode属性判断 1:debug 2:info 3:warn 4:error
-#  dir: "./logs" # 日志目录
-#  lineNum: false # 是否打印行号
+logger:
+  level: 0 # 日志级别 0:未配置,将根据mode属性判断 1:debug 2:info 3:warn 4:error
+  dir: "./logs" # 日志目录
+  lineNum: true # 是否打印行号
+  callerSkipNum: 2
 
 ##################### 短信配置 ####################
 smsCode: "123456" # 测试短信验证码， 如果不为空，则短信验证码为该值。
@@ -151,12 +158,16 @@ smsCode: "123456" # 测试短信验证码， 如果不为空，则短信验证�
 #  clientSecret: ""  # github client secret
 
 # #################### 缓存配置 ####################
-#cache:
-#  tokenCachePrefix: "token:" # token缓存前缀
-#  tokenExpire: 30d # token过期时间
+cache:
+  tokenCachePrefix: "im-token:" # token缓存前缀
+  tokenExpire: 4d # token过期时间
 #  loginDeviceCachePrefix: "login_device:" # 登录设备缓存前缀
 #  loginDeviceCacheExpire: 5m # 登录设备缓存过期时间
-#  uidTokenCachePrefix: "uidtoken:" # uid和token的缓存前缀
+  uidTokenCachePrefix: "im-uidtoken:" # uid和token的缓存前缀
 #  friendApplyTokenCachePrefix: "friend_token:" # 好友申请token缓存前缀
 #  friendApplyExpire: 15d # 好友申请token过期时间
 #  nameCacheExpire: 7d # 名称缓存过期时间
+
+apiCallCfg:
+  fromSecKey: VT3PB4r4ZYYJOuLbU4U0IM86YI7fnuco
+  toWkKey: 5iDlKLrp21jCRid3

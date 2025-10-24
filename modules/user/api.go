@@ -5,6 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/guc"
+	rd "github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/redis"
+	"github.com/go-redis/redis"
 	"hash/crc32"
 	"io"
 	"io/ioutil"
@@ -163,7 +166,11 @@ func (u *User) Route(r *wkhttp.WKHttp) {
 		// #################### 用户红点 ####################
 		user.GET("/reddot/:category", u.getRedDot)      // 获取用户红点
 		user.DELETE("/reddot/:category", u.clearRedDot) // 清除红点
+
+		// #################### 用户扩展 ####################
+		user.GET("/ex/simple_user_info/:uid", u.simpleUserInfo) // 获取用户信息
 	}
+
 	v := r.Group("/v1")
 	{
 
@@ -198,6 +205,25 @@ func (u *User) Route(r *wkhttp.WKHttp) {
 		v.GET("/user/gitee", u.gitee)            // gitee认证页面
 		v.GET("/user/oauth/gitee", u.giteeOAuth) // gitee登录
 
+	}
+
+	syncGrp := r.Group("/v1/sync", func(c *wkhttp.Context) {
+		hsign := c.Query("hsign")
+		ts := c.Query("ts")
+
+		if hsign != util.Md5Hmac(u.ctx.GetConfig().S2s.FromSecKey, ts) {
+			err := errors.New("access forbidden, hsign not eq")
+			u.Error("hsign check failed", zap.Error(err))
+			c.ResponseError(err)
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	})
+	{
+		syncGrp.POST("/user_info", u.syncUserInfo)       // 同步用户信息
+		syncGrp.POST("/modify_profile", u.modifyProfile) // 修改用户资料
 	}
 
 	u.ctx.AddOnlineStatusListener(u.onlineService.listenOnlineStatus) // 监听在线状态
@@ -282,6 +308,125 @@ func (u *User) getRedDot(c *wkhttp.Context) {
 		"count":  count,
 		"is_dot": isDot,
 	})
+}
+
+var (
+	userInfoDcLocker = func() guc.DcSegLocker[string] {
+		return guc.NewSegMuLocker[string](8)
+	}()
+)
+
+type simpleUserInfo struct {
+	Uid      string `json:"uid"`
+	Nickname string `json:"nickname"`
+	Avatar   string `json:"avatar"`
+}
+
+// 获取用户信息
+func (u *User) simpleUserInfo(c *wkhttp.Context) {
+	uid := c.Param("uid")
+
+	if uid == "" {
+		c.ResponseError(errors.New("param error"))
+		return
+	}
+
+	// 从缓存查
+	cli := rd.GetRedisCli()
+
+	var fetchFromCacheFunc = func() (string, bool, error) {
+		if val, err := cli.Get(common2.UserCachePrefix + uid).Result(); err != nil {
+			if err == redis.Nil {
+				return "", false, nil
+			}
+			return "", false, err
+		} else {
+			return val, true, nil
+		}
+	}
+
+	var parseValFunc = func(val string) (simpleUserInfo, error) {
+		var sui simpleUserInfo
+		if e := json.Unmarshal([]byte(val), &sui); e != nil {
+			return sui, e
+		}
+
+		return sui, nil
+	}
+
+	val, ok, err := fetchFromCacheFunc()
+	if err != nil {
+		u.Error("find user simple info failed from cache with uid:"+uid, zap.Error(err))
+		c.ResponseError(errors.New("find user simple info failed"))
+		return
+	}
+
+	if ok {
+		sui, err := parseValFunc(val)
+
+		if err != nil {
+			u.Error("find user simple info failed: parse json error, uid:"+uid, zap.Error(err))
+			c.ResponseError(errors.New("find user simple info failed"))
+		}
+
+		c.RespWithData(&sui)
+
+		return
+	}
+
+	infoStr, err := userInfoDcLocker.DoWithDc(
+		uid,
+		func() (string, bool, error) {
+			if v, o, e := fetchFromCacheFunc(); e != nil {
+				return "", false, e
+			} else {
+				if !o {
+					return "", false, nil
+				}
+
+				return v, true, nil
+			}
+		},
+		func() (string, error) {
+			// 缓存未命中
+			var sui simpleUserInfo
+			_, err = config.DoWithDb(func(sess *dbr.Session) (any, error) {
+				return nil, sess.Select("uid, name as nickname, avatar").From("user").Where("uid = ?", uid).LoadOne(&sui)
+			})
+			if err != nil {
+				return "", err
+			}
+
+			bytes, _ := json.Marshal(&sui)
+
+			// 写入到缓存
+			cli.Set(common2.UserCachePrefix+uid, bytes, time.Duration(util.RandInt(10, 15))*time.Minute)
+
+			return string(bytes), nil
+		},
+	)
+
+	if err != nil {
+		if err == dbr.ErrNotFound {
+			u.Error("find user simple info failed: user not found, uid:"+uid, zap.Error(err))
+			c.ResponseError(errors.New("find user simple info failed"))
+			return
+		}
+
+		u.Error("find user simple info failed, uid:"+uid, zap.Error(err))
+		c.ResponseError(errors.New("find user simple info failed"))
+
+		return
+	}
+
+	sui, err := parseValFunc(infoStr)
+
+	if err != nil {
+		u.Error("find user simple info failed: parse json error, uid:"+uid, zap.Error(err))
+		c.ResponseError(errors.New("find user simple info failed"))
+	}
+
+	c.RespWithData(&sui)
 }
 
 // updateSystemUserToken 更新系统账号token
@@ -489,9 +634,9 @@ func (u *User) userIM(c *wkhttp.Context) {
 		return
 	}
 
-	resultMap["tcp_addr"] = "192.168.1.155:5100"
-	resultMap["ws_addr"] = "ws://192.168.1.155:5200"
-	resultMap["wss_addr"] = ""
+	//resultMap["tcp_addr"] = "192.168.1.155:5100"
+	//resultMap["ws_addr"] = "ws://192.168.1.155:5200"
+	//resultMap["wss_addr"] = ""
 	c.JSON(resp.StatusCode, resultMap)
 }
 

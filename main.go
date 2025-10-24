@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/network"
 	"io/ioutil"
 	"os"
 	"runtime"
@@ -50,6 +51,8 @@ func main() {
 	cfg.Version = Version
 	cfg.ConfigureWithViper(vp)
 
+	network.SettingInternalKey(cfg.S2s.ToWkKey)
+
 	// 初始化context
 	ctx := config.NewContext(cfg)
 	ctx.Event = event.New(ctx)
@@ -58,6 +61,7 @@ func main() {
 	logOpts.Level = cfg.Logger.Level
 	logOpts.LineNum = cfg.Logger.LineNum
 	logOpts.LogDir = cfg.Logger.Dir
+	logOpts.CallerSkipNum = cfg.Logger.CallerSkipNum
 	log.Configure(logOpts)
 
 	var serverType string

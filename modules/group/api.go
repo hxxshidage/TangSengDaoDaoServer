@@ -108,7 +108,9 @@ func (g *Group) Route(r *wkhttp.WKHttp) {
 		openGroup.GET("invites/:invite_no", g.groupMemberInviteDetail) // 获取邀请详情
 		openGroup.POST("invite/sure", g.groupMemberInviteSure)         // 确认邀请
 	}
-	go g.CheckForbiddenLoop()
+
+	// no, don't do this
+	//go g.CheckForbiddenLoop()
 }
 
 // 解散群

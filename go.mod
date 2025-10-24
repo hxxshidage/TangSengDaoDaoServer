@@ -64,6 +64,7 @@ require (
 	github.com/alibabacloud-go/tea-utils v1.4.3 // indirect
 	github.com/alibabacloud-go/tea-xml v1.1.2 // indirect
 	github.com/aliyun/credentials-go v1.1.2 // indirect
+	github.com/alphadose/haxmap v1.4.1 // indirect
 	github.com/aws/aws-sdk-go v1.37.16 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0 // indirect
 	github.com/bwmarrin/snowflake v0.3.0 // indirect
@@ -149,6 +150,7 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
 	golang.org/x/arch v0.3.0 // indirect
+	golang.org/x/exp v0.0.0-20230810033253-352e893a4cad // indirect
 	golang.org/x/image v0.5.0 // indirect
 	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/oauth2 v0.7.0 // indirect
@@ -168,3 +170,7 @@ require (
 )
 
 // replace github.com/TangSengDaoDao/TangSengDaoDaoServerLib => ../TangSengDaoDaoServerLib
+
+replace github.com/TangSengDaoDao/TangSengDaoDaoServerLib => ../TangSengDaoDaoServerLib
+
+//replace github.com/TangSengDaoDao/TangSengDaoDaoServerLib => github.com/hxxshidage/TangSengDaoDaoServerLib
