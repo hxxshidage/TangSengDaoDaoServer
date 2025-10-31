@@ -167,8 +167,12 @@ func (u *User) Route(r *wkhttp.WKHttp) {
 		user.GET("/reddot/:category", u.getRedDot)      // 获取用户红点
 		user.DELETE("/reddot/:category", u.clearRedDot) // 清除红点
 
-		// #################### 用户扩展 ####################
-		user.GET("/ex/simple_user_info/:uid", u.simpleUserInfo) // 获取用户信息
+	}
+
+	// #################### 用户扩展 ####################
+	userEx := r.Group("/v1/user", u.ctx.AuthMiddleware(r))
+	{
+		userEx.GET("/ex/simple_user_info/:uid", u.simpleUserInfo) // 获取用户信息
 	}
 
 	v := r.Group("/v1")
@@ -207,23 +211,12 @@ func (u *User) Route(r *wkhttp.WKHttp) {
 
 	}
 
-	syncGrp := r.Group("/v1/sync", func(c *wkhttp.Context) {
-		hsign := c.Query("hsign")
-		ts := c.Query("ts")
-
-		if hsign != util.Md5Hmac(u.ctx.GetConfig().S2s.FromSecKey, ts) {
-			err := errors.New("access forbidden, hsign not eq")
-			u.Error("hsign check failed", zap.Error(err))
-			c.ResponseError(err)
-			c.Abort()
-			return
-		}
-
-		c.Next()
-	})
+	syncGrp := r.Group("/ex/v1/sync", u.ctx.BizExMiddleware(u.ctx.GetConfig().S2s.FromSecKey))
 	{
 		syncGrp.POST("/user_info", u.syncUserInfo)       // 同步用户信息
 		syncGrp.POST("/modify_profile", u.modifyProfile) // 修改用户资料
+
+		go StartCleanCache()
 	}
 
 	u.ctx.AddOnlineStatusListener(u.onlineService.listenOnlineStatus) // 监听在线状态
@@ -362,14 +355,14 @@ func (u *User) simpleUserInfo(c *wkhttp.Context) {
 	}
 
 	if ok {
-		sui, err := parseValFunc(val)
+		sui, pe := parseValFunc(val)
 
-		if err != nil {
-			u.Error("find user simple info failed: parse json error, uid:"+uid, zap.Error(err))
+		if pe != nil {
+			u.Error("find user simple info failed: parse json error, uid:"+uid, zap.Error(pe))
 			c.ResponseError(errors.New("find user simple info failed"))
 		}
 
-		c.RespWithData(&sui)
+		c.ExRespOk(&sui)
 
 		return
 	}
@@ -426,7 +419,7 @@ func (u *User) simpleUserInfo(c *wkhttp.Context) {
 		c.ResponseError(errors.New("find user simple info failed"))
 	}
 
-	c.RespWithData(&sui)
+	c.ExRespOk(&sui)
 }
 
 // updateSystemUserToken 更新系统账号token

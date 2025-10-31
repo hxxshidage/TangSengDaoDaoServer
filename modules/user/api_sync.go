@@ -90,7 +90,7 @@ func (u *User) syncUserInfo(c *wkhttp.Context) {
 
 	if err := c.BindJSON(&req); err != nil {
 		u.Error("bind json failed", zap.Error(err))
-		c.ResponseError(errors.New("bind json failed"))
+		c.ExRespGenErr(errors.New("bind json failed"))
 		return
 	}
 
@@ -102,9 +102,11 @@ func (u *User) syncUserInfo(c *wkhttp.Context) {
 				req.Uid, req.Nickname, util.Ten2Hex(time.Now().UnixNano()), req.Avatar).Exec()
 		}); err != nil {
 			u.Error(fmt.Sprintf("upsert user failed when sync info, req:%+v", req), zap.Error(err))
-			c.ResponseError(errors.New("upsert user failed"))
+			c.ExRespGenErr(errors.New("upsert user failed"))
 			return
 		}
+
+		OnProfileModify(req.Uid)
 
 		mgr.updateInfoMd5(req.Uid, req.Nickname, req.Avatar)
 	}
@@ -120,7 +122,7 @@ func (u *User) syncUserInfo(c *wkhttp.Context) {
 		}); err != nil {
 			if err != nil {
 				u.Error("update im token failed when sync info", zap.Error(err))
-				c.ResponseError(errors.New("update im token failed"))
+				c.ExRespGenErr(errors.New("update im token failed"))
 				return
 			}
 		}
@@ -139,7 +141,7 @@ func (u *User) syncUserInfo(c *wkhttp.Context) {
 		oldToken, err := u.ctx.Cache().Get(fmt.Sprintf("%s%d%s", u.ctx.GetConfig().Cache.UIDTokenCachePrefix, flag, req.Uid))
 		if err != nil {
 			u.Error("fetch old token failed when sync info", zap.Error(err))
-			c.ResponseError(errors.New("fetch old token failed"))
+			c.ExRespGenErr(errors.New("fetch old token failed"))
 			return
 		}
 
@@ -147,7 +149,7 @@ func (u *User) syncUserInfo(c *wkhttp.Context) {
 			err = u.ctx.Cache().Delete(u.ctx.GetConfig().Cache.TokenCachePrefix + oldToken)
 			if err != nil {
 				u.Error("clear old token failed when sync info", zap.Error(err))
-				c.ResponseError(errors.New("clear old token failed"))
+				c.ExRespGenErr(errors.New("clear old token failed"))
 				return
 			}
 		}
@@ -189,19 +191,19 @@ func (u *User) syncUserInfo(c *wkhttp.Context) {
 
 	if err != nil {
 		u.Error("setting token pipeline exec failed when sync info", zap.Error(err))
-		c.ResponseError(errors.New("setting token pipeline exec failed"))
+		c.ExRespGenErr(errors.New("setting token pipeline exec failed"))
 		return
 	}
 
 	for i, cmd := range cmds {
 		if e := cmd.Err(); e != nil && e != redis.Nil {
 			u.Error(fmt.Sprintf("setting token pl cmd failed when sync info, the %d cmd", i), zap.Error(e))
-			c.ResponseError(errors.New("setting token pipeline failed"))
+			c.ExRespGenErr(errors.New("setting token pipeline failed"))
 			return
 		}
 	}
 
-	c.RespWithData(map[string]any{
+	c.ExRespOk(map[string]any{
 		"api_token": apiToken,
 	})
 }
@@ -222,9 +224,8 @@ func (u *User) modifyProfile(c *wkhttp.Context) {
 	})
 
 	if err == nil {
-		if rows, _ := rst.RowsAffected(); rows == 1 {
-
-			// 删除redis缓存
+		if rows, _ := rst.RowsAffected(); rows > 1 {
+			OnProfileModify(req.Uid)
 		}
 	}
 

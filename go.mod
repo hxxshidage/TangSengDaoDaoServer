@@ -10,6 +10,7 @@ require (
 	github.com/alibabacloud-go/tea v1.2.1
 	github.com/aliyun/alibaba-cloud-sdk-go v1.62.487
 	github.com/aliyun/aliyun-oss-go-sdk v2.2.7+incompatible
+	github.com/alphadose/haxmap v1.4.1
 	github.com/apistd/uni-go-sdk v0.0.2
 	github.com/disintegration/imaging v1.6.2
 	github.com/eapache/queue v1.1.0
@@ -64,7 +65,6 @@ require (
 	github.com/alibabacloud-go/tea-utils v1.4.3 // indirect
 	github.com/alibabacloud-go/tea-xml v1.1.2 // indirect
 	github.com/aliyun/credentials-go v1.1.2 // indirect
-	github.com/alphadose/haxmap v1.4.1 // indirect
 	github.com/aws/aws-sdk-go v1.37.16 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0 // indirect
 	github.com/bwmarrin/snowflake v0.3.0 // indirect
@@ -97,6 +97,7 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
 	github.com/googleapis/gax-go/v2 v2.8.0 // indirect
+	github.com/gotidy/copy v0.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect

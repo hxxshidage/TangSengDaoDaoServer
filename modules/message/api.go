@@ -126,6 +126,17 @@ func (m *Message) Route(r *wkhttp.WKHttp) {
 	{
 		msg.POST("/send", m.sendMsg) // 代发消息
 	}
+
+	// #################### 消息扩展 ####################
+	msgExGrp := r.Group("/ex/v1/message", m.ctx.BizExMiddleware(m.ctx.GetConfig().S2s.FromSecKey))
+	{
+		msgExGrp.POST("/proxy/send", m.sendMsgProxy)               // 后台服务发送消息
+		msgExGrp.POST("/proxy/send_cmd", m.sendCmdMsgProxy)        // 代发命令消息
+		msgExGrp.POST("/proxy/qry_chat_records", m.qryChatRecords) // 查询聊天记录
+	}
+
+	r.POST("/test/chat_records", m.qryChatRecords)
+
 	m.ctx.AddMessagesListener(m.listenerMessages) // 监听消息
 	m.syncMessageReadedCount()
 }
@@ -218,6 +229,214 @@ func (m *Message) sendMsg(c *wkhttp.Context) {
 		return
 	}
 	c.ResponseOK()
+}
+
+func (m *Message) sendMsgProxy(c *wkhttp.Context) {
+	var req struct {
+		FromUid            string                 `json:"from_uid"`             // 发送者uid
+		ToUid              string                 `json:"to_uid"`               // 接受者uid
+		ReceiveChannelType uint8                  `json:"receive_channel_type"` // 接受类型
+		CustomCode         string                 `json:"custom_code"`          // 自定义消息之自定义业务code
+		Payload            map[string]interface{} `json:"payload"`              // 消息体
+	}
+
+	if err := c.BindJSON(&req); err != nil {
+		m.Error("bind json failed", zap.Error(err))
+		c.ExRespBadErr(errors.New("bind json failed"))
+		return
+	}
+
+	if req.FromUid == "" {
+		c.ExRespBadErr(errors.New("FromUid was empty"))
+		return
+	}
+
+	if req.ToUid == "" {
+		c.ExRespBadErr(errors.New("ToUid was empty"))
+		return
+	}
+
+	if req.Payload == nil {
+		c.ExRespBadErr(errors.New("payload was empty"))
+		return
+	}
+
+	err := m.sendMessageV1(req.FromUid, req.ToUid, req.ReceiveChannelType, req.CustomCode, req.Payload)
+	if err != nil {
+		m.Error("send msg failed", zap.Error(err))
+		c.ExRespErr(1, errors.New("send msg failed"))
+		return
+	}
+
+	c.ExRespJustOk()
+}
+
+// 代发命令消息
+func (m *Message) sendCmdMsgProxy(c *wkhttp.Context) {
+	var req struct {
+		CmdType        string         `json:"cmd_type"`        // 命令类型
+		CmdSubscribers []string       `json:"cmd_subscribers"` // 命令消息的订阅者
+		Param          map[string]any `json:"param"`           // 参数
+	}
+
+	if err := c.BindJSON(&req); err != nil {
+		m.Error("bind json failed", zap.Error(err))
+		c.ExRespBadErr(errors.New("bind json failed"))
+		return
+	}
+
+	if len(req.CmdType) == 0 {
+		c.ExRespBadErr(errors.New("cmd type was empty"))
+		return
+	}
+
+	if len(req.CmdSubscribers) == 0 {
+		c.ExRespBadErr(errors.New("cmd subscribers was empty"))
+		return
+	}
+
+	if err := m.ctx.SendCMD(config.MsgCMDReq{
+		NoPersist:   true,
+		Subscribers: req.CmdSubscribers,
+		CMD:         req.CmdType,
+		Param:       req.Param,
+	}); err != nil {
+		m.Error("send cmd msg failed", zap.Error(err))
+		c.ExRespErr(1, errors.New("send msg failed"))
+		return
+	}
+
+	c.ExRespJustOk()
+}
+
+type chatRecordItem struct {
+	MessageId   string         `json:"message_id,omitempty"`
+	FromUid     string         `json:"from_uid,omitempty"`
+	ToUid       string         `json:"to_uid,omitempty"`
+	ChannelType int            `json:"channel_type,omitempty"`
+	ContentType int16          `json:"content_type,omitempty"`
+	Payload     map[string]any `json:"payload,omitempty"`
+}
+
+func (m *Message) qryChatRecords(c *wkhttp.Context) {
+	var req struct {
+		Page         int    `json:"page,omitempty"`
+		PageSize     int    `json:"page_size,omitempty"`
+		FromUid      string `json:"from_uid,omitempty"`
+		ToUid        string `json:"to_uid,omitempty"`
+		StartTime    string `json:"start_time"`
+		EndTime      string `json:"end_time"`
+		ContentTypes []int  `json:"content_types,omitempty"`
+	}
+
+	if err := c.BindJSON(&req); err != nil {
+		m.Error("bind json failed", zap.Error(err))
+		c.ExRespBadErr(errors.New("bind json failed"))
+		return
+	}
+
+	if req.Page <= 0 || req.Page > 100_000 {
+		c.ExRespBadErr(errors.New("page out of range"))
+		return
+	}
+
+	if req.PageSize <= 0 || req.PageSize > 200 {
+		c.ExRespBadErr(errors.New("page size of range"))
+		return
+	}
+
+	if req.FromUid == "" {
+		c.ExRespBadErr(errors.New("fromUid was empty"))
+		return
+	}
+
+	if req.ToUid == "" {
+		c.ExRespBadErr(errors.New("toUid was empty"))
+		return
+	}
+
+	var startTs, endTs int64
+	if ts, err := util.Parse2SecInCn(req.StartTime); err != nil {
+		c.ExRespBadErr(errors.New("startTime illegal:" + req.StartTime))
+		return
+	} else {
+		startTs = ts
+	}
+
+	if ts, err := util.Parse2SecInCn(req.EndTime); err != nil {
+		c.ExRespBadErr(errors.New("endTime illegal:" + req.EndTime))
+		return
+	} else {
+		endTs = ts
+	}
+
+	p, err := config.PageQry[messageRecord](
+		config.NewPp(req.Page, req.PageSize),
+		func(sess *dbr.Session) (*dbr.SelectStmt, *dbr.SelectStmt) {
+			var buildCondFunc = func(ss *dbr.SelectStmt) {
+				ss.Where("cts between ? and ? and ((from_uid = ? and channel_id = ?) or (from_uid = ? and channel_id = ?))",
+					startTs, endTs, req.FromUid, req.ToUid, req.ToUid, req.FromUid)
+			}
+			countQry := sess.Select("COUNT(1)").From("t_message_records")
+			buildCondFunc(countQry)
+
+			rstQry := sess.Select("*").From("t_message_records")
+			buildCondFunc(rstQry)
+
+			return countQry, rstQry
+		},
+	)
+	if err != nil {
+		m.Error("qry chat records failed", zap.Error(err))
+		c.ExRespBadErr(errors.New("qry chat records failed"))
+		return
+	}
+
+	np := config.ConvertItems[messageRecord, chatRecordItem](
+		p,
+		func(mr *messageRecord) *chatRecordItem {
+			cri := &chatRecordItem{}
+			cri.MessageId = mr.MessageID
+			cri.FromUid = mr.FromUID
+			cri.ToUid = mr.ChannelID
+			cri.ContentType = mr.ContentType
+
+			var pdm map[string]any
+			if e := json.Unmarshal(mr.Payload, &pdm); e != nil {
+				return cri
+			}
+
+			cri.Payload = pdm
+			return cri
+		},
+	)
+
+	c.ExRespOk(np)
+}
+
+func (m *Message) sendMessageV1(from, to string, channelType uint8, customCode string, payload map[string]interface{}) error {
+	pd := make(map[string]any, 3)
+	pd["content"] = payload
+	pd["type"] = common.CustomMsg
+
+	if customCode != "" {
+		pd["extra"] = map[string]any{"code": customCode}
+	}
+
+	err := m.ctx.SendMessage(&config.MsgSendReq{
+		Header: config.MsgHeader{
+			RedDot: 1,
+		},
+		ChannelID:   to,
+		ChannelType: channelType,
+		FromUID:     from,
+		Payload:     []byte(util.ToJson(pd)),
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (m *Message) sendMessage(channelID string, channelType uint8, fromUID string, payload map[string]interface{}) error {

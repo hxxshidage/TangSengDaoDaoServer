@@ -19,7 +19,7 @@ wukongIM:
 
 ##################### db ####################
 db:
-  mysqlAddr: "root:root@tcp(192.168.1.45:3306)/fsx_im?charset=utf8mb4&parseTime=true" # mysql连接地址
+  mysqlAddr: "root:root@tcp(192.168.1.45:3306)/fsx_im?charset=utf8mb4&parseTime=true&loc=Local" # mysql连接地址
   migration: true
   outputLog: true
   mySQLMaxOpenConns: 128

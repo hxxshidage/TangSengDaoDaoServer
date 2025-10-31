@@ -42,7 +42,7 @@ type Webhook struct {
 // New New
 func New(ctx *config.Context) *Webhook {
 
-	supportTypes := getSupportTypes() // 支持推送的消息类型
+	supportTypes := getSupportTypesEx() // 支持推送的消息类型
 
 	pushMap := map[common.DeviceType]map[string]Push{}
 
@@ -96,6 +96,10 @@ func New(ctx *config.Context) *Webhook {
 }
 func getSupportTypes() []common.ContentType {
 	return []common.ContentType{common.Text, common.Image, common.GIF, common.Voice, common.Video, common.File, common.Location, common.Card, common.MultipleForward, common.VectorSticker, common.EmojiSticker}
+}
+
+func getSupportTypesEx() []common.ContentType {
+	return []common.ContentType{common.Text, common.Image, common.GIF, common.Voice, common.Video, common.File, common.Location, common.Card, common.MultipleForward, common.VectorSticker, common.EmojiSticker, common.CustomMsg}
 }
 
 // Route 路由配置
@@ -193,7 +197,7 @@ func (w *Webhook) handleMessageNotify(messages []MsgResp) ([]string, error) {
 		}
 		messageM := message.toModel()
 		messageM.ChannelID = fakeChannelID
-		err := w.messageDB.insertOrUpdateTx(messageM, tx)
+		err := w.messageDB.insertOrUpdateTxExV1(messageM, tx)
 		if err != nil {
 			_ = tx.Rollback()
 			w.Error("插入消息失败！", zap.Error(err))
@@ -597,21 +601,39 @@ func (m *MsgResp) toModel() *messageModel {
 	if m.Expire > 0 {
 		expireAt = uint32(m.Timestamp) + m.Expire
 	}
+
+	var getTypeFromPdFunc = func(pd []byte) uint16 {
+		var pdm map[string]any
+		if e := util.ReadJsonByByte(pd, &pdm); e != nil {
+			return 0
+		}
+
+		if val, ok := pdm["type"].(json.Number); ok {
+			if ti, e := val.Int64(); e == nil {
+				return uint16(ti)
+			}
+		}
+
+		return 0
+	}
+
 	return &messageModel{
-		MessageID:   fmt.Sprintf("%d", m.MessageID),
-		MessageSeq:  int64(m.MessageSeq),
-		ClientMsgNo: m.ClientMsgNo,
-		Header:      util.ToJson(m.Header),
-		Setting:     m.Setting,
-		Signal:      signal,
-		FromUID:     m.FromUID,
-		ChannelID:   m.ChannelID,
-		ChannelType: m.ChannelType,
-		Expire:      m.Expire,
-		ExpireAt:    expireAt,
-		Timestamp:   m.Timestamp,
-		Payload:     string(m.Payload),
-		IsDeleted:   0,
+		MessageID:       fmt.Sprintf("%d", m.MessageID),
+		MessageSeq:      int64(m.MessageSeq),
+		ClientMsgNo:     m.ClientMsgNo,
+		Header:          util.ToJson(m.Header),
+		Setting:         m.Setting,
+		Signal:          signal,
+		FromUID:         m.FromUID,
+		ChannelID:       m.ChannelID,
+		OriginChannelID: m.ChannelID,
+		ChannelType:     m.ChannelType,
+		Expire:          m.Expire,
+		ExpireAt:        expireAt,
+		Timestamp:       m.Timestamp,
+		ContentType:     getTypeFromPdFunc(m.Payload),
+		Payload:         string(m.Payload),
+		IsDeleted:       0,
 	}
 }
 
