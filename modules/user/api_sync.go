@@ -13,7 +13,6 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"sync/atomic"
-	"time"
 )
 
 var (
@@ -99,7 +98,7 @@ func (u *User) syncUserInfo(c *wkhttp.Context) {
 	if mgr.needModifyInfo(req.Uid, req.Nickname, req.Avatar) {
 		if _, err := config.DoWithDb(func(sess *dbr.Session) (sql.Result, error) {
 			return sess.InsertBySql("insert into user (uid, name, short_no, avatar) values (?, ?, ?, ?) on DUPLICATE key update `name` = values(name), avatar = values(avatar)",
-				req.Uid, req.Nickname, util.Ten2Hex(time.Now().UnixNano()), req.Avatar).Exec()
+				req.Uid, req.Nickname, util.RandStr(12), req.Avatar).Exec()
 		}); err != nil {
 			u.Error(fmt.Sprintf("upsert user failed when sync info, req:%+v", req), zap.Error(err))
 			c.ExRespGenErr(errors.New("upsert user failed"))

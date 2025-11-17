@@ -1,11 +1,12 @@
 # #################### 基础配置 ####################
 mode: "debug" #   运行模式 debug or release
+profile: "test" # 环境
 # adminpwd: "123456" # 管理员密码
 #addr: ":8090" # api监听地址
 grpcAddr: ":5008" # webhook grpc监听地址 给悟空IM提供的
 #appName: "唐僧叨叨" # 项目名称
 #rootDir: "tsdddata" # 数据根目录
-#messageSaveAcrossDevice: true # 消息是否跨设备保存（换设备登录消息是否还能同步到老消息）
+#messageSaveAcrossDevice: true # 消息是否跨设备保存（换设备登录消息是否还能同步到老消息）user/login
 #welcomeMessage: "欢迎使用{{appName}}" # 欢迎消息
 #phoneSearchOff: true # 关闭手机号搜索用户功能
 #onlineStatusOn: true # 开启在线状态功能
@@ -81,6 +82,7 @@ smsCode: "123456" # 测试短信验证码， 如果不为空，则短信验证�
 
 ##################### 推送配置 ####################
 #push:
+#  enabled: false
 #  contentDetailOn: true # 推送内容是否显示详情
 #  pushPoolSize: 100 # 推送池大小
 #  apns: # 苹果推送

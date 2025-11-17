@@ -74,7 +74,7 @@ func NewConversation(ctx *config.Context) *Conversation {
 func (co *Conversation) Route(r *wkhttp.WKHttp) {
 
 	// TODO: 这个里的接口后面移到 conversation的组里，因为单词拼错了 😭
-	coversations := r.Group("/v1/coversations", co.ctx.AuthMiddleware(r))
+	coversations := r.Group("/v1/coversations", co.ctx.ApiAccessReject("", nil), co.ctx.AuthMiddleware(r))
 	{
 		// 获取最近会话 TODO: 此接口应该没有被使用了
 		coversations.GET("", co.getConversations)
@@ -82,20 +82,32 @@ func (co *Conversation) Route(r *wkhttp.WKHttp) {
 	}
 
 	// TODO: 这个里的接口后面移到 conversation的组里，因为单词拼错了 😭
-	cnversation := r.Group("/v1/coversation", co.ctx.AuthMiddleware(r))
-	{
-		cnversation.PUT("/clearUnread", co.clearConversationUnread)
+	//cnversation := r.Group("/v1/coversation", co.ctx.AuthMiddleware(r))
+	//{
+	//cnversation.PUT("/clearUnread", co.clearConversationUnread)
 
-	}
+	//}
 
-	conversation := r.Group("/v1/conversation", co.ctx.AuthMiddleware(r))
+	conversation := r.Group("/v1/conversation", co.ctx.ApiAccessReject(
+		"/v1/conversation",
+		[]config.ExcludeAccessPath{
+			{
+				"/sync",
+				true,
+			}, {
+				"/clearUnread",
+				true,
+			},
+		}),
+		co.ctx.AuthMiddleware(r))
 	{
+		conversation.PUT("/clearUnread", co.clearConversationUnread)
 		// 离线的最近会话
 		conversation.POST("/sync", co.syncUserConversation)
 		conversation.POST("/syncack", co.syncUserConversationAck)
 		conversation.POST("/extra/sync", co.conversationExtraSync) // 同步最近会话扩展
 	}
-	conversations := r.Group("/v1/conversations", co.ctx.AuthMiddleware(r))
+	conversations := r.Group("/v1/conversations", co.ctx.ApiAccessReject("", nil), co.ctx.AuthMiddleware(r))
 	{
 		conversations.DELETE("/:channel_id/:channel_type", co.deleteConversation)          // 删除最近会话
 		conversations.POST("/:channel_id/:channel_type/extra", co.conversationExtraUpdate) // 添加或更新最近会话扩展

@@ -2,6 +2,9 @@ package user
 
 import (
 	"fmt"
+	common2 "github.com/TangSengDaoDao/TangSengDaoDaoServer/modules/common"
+	rd "github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/redis"
+	"github.com/go-redis/redis"
 
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/common"
 	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/config"
@@ -81,6 +84,78 @@ func (u *User) handleOnlineStatus(onlineStatuses []config.OnlineStatus) {
 		}
 	}
 
+}
+
+func (u *User) handleOnlineStatusV1(onlineStatuses []config.OnlineStatus) {
+	// redis中维护在线/离线 状态
+	if len(onlineStatuses) == 0 {
+		return
+	}
+
+	uidToOnline := make(map[string]bool)
+
+	for _, item := range onlineStatuses {
+		uid := item.UID
+		isWeb := config.DeviceFlag(item.DeviceFlag) == config.Web
+
+		// uid去重, 对于web客户端来说同一个uid online优先级高于offline
+		if isWeb {
+			if item.Online {
+				uidToOnline[uid] = true
+			}
+		} else {
+			// 非 Web：仅当未被 Web 设为 online 时，才更新状态
+			if !uidToOnline[uid] {
+				uidToOnline[uid] = item.Online
+			}
+		}
+	}
+
+	bool2uids := make(map[bool][]any)
+	for uid, online := range uidToOnline {
+		bool2uids[online] = append(bool2uids[online], uid)
+	}
+
+	u.Debug("handle online uids group by results", zap.Any("onlineUids", bool2uids[true]), zap.Any("offlineUids", bool2uids[false]))
+
+	cli := rd.GetRedisCli()
+
+	var addCmd, remCmd *redis.IntCmd
+
+	_, err := cli.Pipelined(func(pl redis.Pipeliner) error {
+		if len(bool2uids[true]) > 0 {
+			addCmd = pl.SAdd(common2.UserOnlineKey, bool2uids[true]...)
+		}
+
+		if len(bool2uids[false]) > 0 {
+			remCmd = pl.SRem(common2.UserOnlineKey, bool2uids[false]...)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		u.Error("handle online uids pipeline exec failed", zap.Error(err))
+		return
+	}
+
+	var addCount, remCount int64
+	// 获取返回值
+	if addCmd != nil {
+		addCount, err = addCmd.Result()
+		if err != nil {
+			addCount = -1
+		}
+	}
+
+	if remCmd != nil {
+		remCount, err = remCmd.Result()
+		if err != nil {
+			remCount = -1
+		}
+	}
+
+	u.Info("handle online uids pipeline exec success", zap.Int64("addCount", addCount), zap.Int64("remCount", remCount))
 }
 
 // 获取在线的主设备

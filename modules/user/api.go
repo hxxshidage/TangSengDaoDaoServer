@@ -118,7 +118,7 @@ func New(ctx *config.Context) *User {
 
 // Route 路由配置
 func (u *User) Route(r *wkhttp.WKHttp) {
-	auth := r.Group("/v1", u.ctx.AuthMiddleware(r))
+	auth := r.Group("/v1", u.ctx.ApiAccessReject("", nil), u.ctx.AuthMiddleware(r))
 	{
 
 		auth.GET("/users/:uid", u.get) // 根据uid查询用户信息
@@ -129,7 +129,7 @@ func (u *User) Route(r *wkhttp.WKHttp) {
 		auth.PUT("/users/:uid/setting", u.setting.userSettingUpdate) // 更新用户设置
 	}
 
-	user := r.Group("/v1/user", u.ctx.AuthMiddleware(r))
+	user := r.Group("/v1/user", u.ctx.ApiAccessReject("", nil), u.ctx.AuthMiddleware(r))
 	{
 		user.POST("/device_token", u.registerUserDeviceToken)      // 注册用户设备
 		user.DELETE("/device_token", u.unregisterUserDeviceToken)  // 卸载用户设备
@@ -175,7 +175,10 @@ func (u *User) Route(r *wkhttp.WKHttp) {
 		userEx.GET("/ex/simple_user_info/:uid", u.simpleUserInfo) // 获取用户信息
 	}
 
-	v := r.Group("/v1")
+	v := r.Group("/v1",
+		u.ctx.ApiAccessReject(
+			"/v1",
+			[]config.ExcludeAccessPath{{"/im", false}}))
 	{
 
 		v.POST("/user/register", u.register)                 //用户注册
@@ -220,8 +223,8 @@ func (u *User) Route(r *wkhttp.WKHttp) {
 	}
 
 	u.ctx.AddOnlineStatusListener(u.onlineService.listenOnlineStatus) // 监听在线状态
-	u.ctx.AddOnlineStatusListener(u.handleOnlineStatus)               // 需要放在listenOnlineStatus之后
-	u.ctx.Schedule(time.Minute*5, u.onlineStatusCheck)                // 在线状态定时检查
+	u.ctx.AddOnlineStatusListener(u.handleOnlineStatusV1)             // 需要放在listenOnlineStatus之后
+	u.ctx.Schedule(time.Minute*10, u.onlineStatusCheck)               // 在线状态定时检查
 
 }
 
@@ -313,6 +316,7 @@ type simpleUserInfo struct {
 	Uid      string `json:"uid"`
 	Nickname string `json:"nickname"`
 	Avatar   string `json:"avatar"`
+	Online   bool   `json:"online"`
 }
 
 // 获取用户信息
@@ -347,6 +351,15 @@ func (u *User) simpleUserInfo(c *wkhttp.Context) {
 		return sui, nil
 	}
 
+	var onlineFunc = func(sui *simpleUserInfo) {
+		rCli := rd.GetRedisCli()
+		if online, oe := rCli.SIsMember(common2.UserOnlineKey, sui.Uid).Result(); oe != nil {
+			u.Error("qry user online status failed in redis", zap.String("uid", sui.Uid))
+		} else {
+			sui.Online = online
+		}
+	}
+
 	val, ok, err := fetchFromCacheFunc()
 	if err != nil {
 		u.Error("find user simple info failed from cache with uid:"+uid, zap.Error(err))
@@ -356,6 +369,8 @@ func (u *User) simpleUserInfo(c *wkhttp.Context) {
 
 	if ok {
 		sui, pe := parseValFunc(val)
+
+		onlineFunc(&sui)
 
 		if pe != nil {
 			u.Error("find user simple info failed: parse json error, uid:"+uid, zap.Error(pe))
@@ -413,6 +428,8 @@ func (u *User) simpleUserInfo(c *wkhttp.Context) {
 	}
 
 	sui, err := parseValFunc(infoStr)
+
+	onlineFunc(&sui)
 
 	if err != nil {
 		u.Error("find user simple info failed: parse json error, uid:"+uid, zap.Error(err))
@@ -626,6 +643,8 @@ func (u *User) userIM(c *wkhttp.Context) {
 		c.ResponseError(err)
 		return
 	}
+
+	u.Debug("qry im node info success", zap.Any("resultMap", resultMap))
 
 	//resultMap["tcp_addr"] = "192.168.1.155:5100"
 	//resultMap["ws_addr"] = "ws://192.168.1.155:5200"

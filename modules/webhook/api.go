@@ -103,17 +103,30 @@ func getSupportTypesEx() []common.ContentType {
 }
 
 // Route 路由配置
+//func (w *Webhook) Route(r *wkhttp.WKHttp) {
+//	r.POST("/v1/webhook", w.webhook)
+//
+//	r.POST("/v2/webhook", w.webhook)
+//
+//	r.POST("/v1/datasource", w.datasource)
+//
+//	r.POST("/v1/webhook/message/notify", w.messageNotify) // 接受IM的消息通知,(TODO: 此接口需要与IM做安全认证)
+//
+//	r.POST("/v1/webhook/github", w.github) // github webhook
+//
+//}
+
 func (w *Webhook) Route(r *wkhttp.WKHttp) {
-	r.POST("/v1/webhook", w.webhook)
+	whGrp := r.Group("/webhook", w.ctx.ApiAccessReject("", nil))
+	whGrp.POST("/v1/webhook", w.webhook)
 
-	r.POST("/v2/webhook", w.webhook)
+	whGrp.POST("/v2/webhook", w.webhook)
 
-	r.POST("/v1/datasource", w.datasource)
+	whGrp.POST("/v1/datasource", w.datasource)
 
-	r.POST("/v1/webhook/message/notify", w.messageNotify) // 接受IM的消息通知,(TODO: 此接口需要与IM做安全认证)
+	whGrp.POST("/v1/webhook/message/notify", w.messageNotify) // 接受IM的消息通知,(TODO: 此接口需要与IM做安全认证)
 
-	r.POST("/v1/webhook/github", w.github) // github webhook
-
+	whGrp.POST("/v1/webhook/github", w.github) // github webhook
 }
 
 func (w *Webhook) Start() error {
@@ -317,6 +330,11 @@ func (w *Webhook) handleMsgOffline(data []byte) error {
 		return err
 	}
 	w.Debug("收到离线消息->", zap.Any("msg", msgResp))
+
+	if !w.ctx.GetConfig().Push.Enabled {
+		w.Debug("receive offline msg, but push was disabled")
+		return nil
+	}
 
 	var toUids []string
 	if msgResp.Compress == "gzip" {

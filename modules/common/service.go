@@ -3,6 +3,7 @@ package common
 import (
 	"errors"
 	"fmt"
+	"github.com/TangSengDaoDao/TangSengDaoDaoServerLib/pkg/util"
 	"math/rand"
 	"sync"
 	"time"
@@ -103,15 +104,25 @@ func runGenShortnoTask(ctx *config.Context) {
 			time.Sleep(errorSleep)
 			continue
 		}
-		if count < 10000 {
-			shortnos := generateNums(ctx.GetConfig().ShortNo.NumLen, 100)
+		if count < 100 {
+			//shortnos := generateNums(ctx.GetConfig().ShortNo.NumLen, 100)
+			var shortnos []string
+			func() {
+				for i := 0; i < 100; i++ {
+					shortnos = append(shortnos, util.RandStr(12))
+				}
+			}()
+
 			if len(shortnos) > 0 {
 				err = shortnoDB.inserts(shortnos)
 				if err != nil {
 					ctx.Error("添加短编号失败！", zap.Error(err))
 				}
 			}
+		} else {
+			break
 		}
+
 		time.Sleep(time.Second * 30)
 	}
 }

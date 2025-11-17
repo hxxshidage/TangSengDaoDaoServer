@@ -84,7 +84,10 @@ func New(ctx *config.Context) *Message {
 
 // Route 路由配置
 func (m *Message) Route(r *wkhttp.WKHttp) {
-	message := r.Group("/v1/message", m.ctx.AuthMiddleware(r))
+	message := r.Group("/v1/message", m.ctx.ApiAccessReject(
+		"/v1/message",
+		[]config.ExcludeAccessPath{{"/channel/sync", true}}),
+		m.ctx.AuthMiddleware(r))
 	{
 
 		message.POST("/sync", m.sync)                             // 同步消息 (写模式才用到 TODO：此方法未来将弃用)
@@ -135,7 +138,7 @@ func (m *Message) Route(r *wkhttp.WKHttp) {
 		msgExGrp.POST("/proxy/qry_chat_records", m.qryChatRecords) // 查询聊天记录
 	}
 
-	r.POST("/test/chat_records", m.qryChatRecords)
+	//r.POST("/test/chat_records", m.qryChatRecords)
 
 	m.ctx.AddMessagesListener(m.listenerMessages) // 监听消息
 	m.syncMessageReadedCount()
@@ -316,6 +319,7 @@ type chatRecordItem struct {
 	ChannelType int            `json:"channel_type,omitempty"`
 	ContentType int16          `json:"content_type,omitempty"`
 	Payload     map[string]any `json:"payload,omitempty"`
+	CTS         int64          `json:"cts"`
 }
 
 func (m *Message) qryChatRecords(c *wkhttp.Context) {
@@ -340,7 +344,7 @@ func (m *Message) qryChatRecords(c *wkhttp.Context) {
 		return
 	}
 
-	if req.PageSize <= 0 || req.PageSize > 200 {
+	if req.PageSize <= 0 || req.PageSize > 100 {
 		c.ExRespBadErr(errors.New("page size of range"))
 		return
 	}
@@ -370,20 +374,23 @@ func (m *Message) qryChatRecords(c *wkhttp.Context) {
 		endTs = ts
 	}
 
-	p, err := config.PageQry[messageRecord](
-		config.NewPp(req.Page, req.PageSize),
-		func(sess *dbr.Session) (*dbr.SelectStmt, *dbr.SelectStmt) {
-			var buildCondFunc = func(ss *dbr.SelectStmt) {
-				ss.Where("cts between ? and ? and ((from_uid = ? and channel_id = ?) or (from_uid = ? and channel_id = ?))",
+	p, err := config.PageGeneralQry[messageRecord](
+		config.NewPgp(req.Page, req.PageSize, "t_message_records"),
+		func(cntStmt, condStmt *dbr.SelectStmt) {
+			var buildCondFunc = func(stmt *dbr.SelectStmt) {
+				stmt.Where("cts between ? and ? and ((from_uid = ? and channel_id = ?) or (from_uid = ? and channel_id = ?))",
 					startTs, endTs, req.FromUid, req.ToUid, req.ToUid, req.FromUid)
+
+				if len(req.ContentTypes) > 0 {
+					stmt.Where("content_type in ?", req.ContentTypes)
+				}
+
+				stmt.OrderAsc("cts")
 			}
-			countQry := sess.Select("COUNT(1)").From("t_message_records")
-			buildCondFunc(countQry)
 
-			rstQry := sess.Select("*").From("t_message_records")
-			buildCondFunc(rstQry)
+			buildCondFunc(cntStmt)
 
-			return countQry, rstQry
+			buildCondFunc(condStmt)
 		},
 	)
 	if err != nil {
@@ -400,6 +407,7 @@ func (m *Message) qryChatRecords(c *wkhttp.Context) {
 			cri.FromUid = mr.FromUID
 			cri.ToUid = mr.ChannelID
 			cri.ContentType = mr.ContentType
+			cri.CTS = mr.CTS
 
 			var pdm map[string]any
 			if e := json.Unmarshal(mr.Payload, &pdm); e != nil {
